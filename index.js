@@ -54,7 +54,7 @@ wss.on('connection', (ws, req) => {
     ws.currentGroupId = null;
 
     ws.on('message', (message, isBinary) => {
-        if (isBinary || Buffer.isBuffer(message)) {
+        if (isBinary) {
             // Real-time Audio Relay (Bypasses NAT / CGNAT between different countries)
             if (!ws.room || !serverRooms.has(ws.room)) return;
             const room = serverRooms.get(ws.room);
