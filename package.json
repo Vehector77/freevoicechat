@@ -1,0 +1,12 @@
+{
+  "name": "free-voice-chat-signaling",
+  "version": "1.0.0",
+  "description": "Ultra lightweight free signaling server for FreeVoiceChat P2P Minecraft mod",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
