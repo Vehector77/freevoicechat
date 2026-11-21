@@ -33,10 +33,50 @@ function broadcastGroupList(serverAddress) {
     });
 
     for (const client of room) {
-        if (client.readyState === client.OPEN) {
+        if (client.readyState === 1) {
             client.send(message);
         }
     }
+}
+
+function broadcastGroupUpdate(serverAddress, groupObj) {
+    if (!serverRooms.has(serverAddress)) return;
+    const room = serverRooms.get(serverAddress);
+    const updateMsg = JSON.stringify({
+        type: 'group_update',
+        group: {
+            id: groupObj.id,
+            name: groupObj.name,
+            hasPassword: groupObj.hasPassword,
+            owner: groupObj.owner,
+            members: Array.from(groupObj.members.values())
+        }
+    });
+
+    for (const client of room) {
+        if (client.readyState === 1 && groupObj.members.has(client.uuid)) {
+            client.send(updateMsg);
+        }
+    }
+}
+
+function leaveCurrentGroup(ws) {
+    if (!ws.room || !serverGroups.has(ws.room) || !ws.currentGroupId) return;
+    const groups = serverGroups.get(ws.room);
+    const groupObj = groups.get(ws.currentGroupId);
+    if (groupObj) {
+        groupObj.members.delete(ws.uuid);
+        if (groupObj.members.size === 0) {
+            groups.delete(ws.currentGroupId);
+        } else {
+            if (groupObj.owner === ws.uuid) {
+                groupObj.owner = groupObj.members.keys().next().value;
+            }
+            broadcastGroupUpdate(ws.room, groupObj);
+        }
+    }
+    ws.currentGroupId = null;
+    broadcastGroupList(ws.room);
 }
 
 wss.on('connection', (ws, req) => {
@@ -131,6 +171,7 @@ wss.on('connection', (ws, req) => {
             } else if (data.type === 'group_create') {
                 const { id, name, hasPassword, password } = data;
                 if (!ws.room) return;
+                leaveCurrentGroup(ws);
 
                 if (!serverGroups.has(ws.room)) {
                     serverGroups.set(ws.room, new Map());
@@ -179,6 +220,8 @@ wss.on('connection', (ws, req) => {
                     return;
                 }
 
+                leaveCurrentGroup(ws);
+
                 groupObj.members.set(ws.uuid, { uuid: ws.uuid, name: ws.name });
                 ws.currentGroupId = id;
 
@@ -194,20 +237,10 @@ wss.on('connection', (ws, req) => {
                 }));
 
                 broadcastGroupList(ws.room);
+                broadcastGroupUpdate(ws.room, groupObj);
                 console.log(`[Group] ${ws.name} joined ${groupObj.name}`);
             } else if (data.type === 'group_leave') {
-                if (!ws.room || !serverGroups.has(ws.room) || !ws.currentGroupId) return;
-                const groups = serverGroups.get(ws.room);
-                const groupObj = groups.get(ws.currentGroupId);
-
-                if (groupObj) {
-                    groupObj.members.delete(ws.uuid);
-                    if (groupObj.members.size === 0) {
-                        groups.delete(ws.currentGroupId);
-                    }
-                }
-                ws.currentGroupId = null;
-                broadcastGroupList(ws.room);
+                leaveCurrentGroup(ws);
             }
         } catch (err) {
             console.error('Error handling message:', err);
@@ -216,18 +249,7 @@ wss.on('connection', (ws, req) => {
 
     ws.on('close', () => {
         if (ws.room) {
-            // Remove from group if in one
-            if (serverGroups.has(ws.room) && ws.currentGroupId) {
-                const groups = serverGroups.get(ws.room);
-                const groupObj = groups.get(ws.currentGroupId);
-                if (groupObj) {
-                    groupObj.members.delete(ws.uuid);
-                    if (groupObj.members.size === 0) {
-                        groups.delete(ws.currentGroupId);
-                    }
-                }
-                broadcastGroupList(ws.room);
-            }
+            leaveCurrentGroup(ws);
 
             if (serverRooms.has(ws.room)) {
                 const room = serverRooms.get(ws.room);
